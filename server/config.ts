@@ -96,6 +96,7 @@ type Stored = {
   /** Before multiple Hermes: the one saved connection. Migrated on first read. */
   hermes?: { url: string; username?: string; password?: string }
   secret?: string
+  totp?: { keyId: string; counter: number }
   /** Set on the first start that asks where agents live: data without it predates the choice (an update). */
   setupSeen?: true
 }
@@ -367,4 +368,12 @@ export function sessionSecret(): string {
     console.warn(`Murmur: couldn’t save a sign-in secret in ${dataDir()} (${(error as Error).message}). Sign-ins won’t survive a restart.`)
   }
   return secret
+}
+
+/** Record a successful authenticator code before issuing the session, including across restarts. */
+export function consumeTotp(keyId: string, counter: number) {
+  const stored = read()
+  if (stored.totp?.keyId === keyId && stored.totp.counter >= counter) return false
+  write({ ...stored, totp: { keyId, counter } })
+  return true
 }

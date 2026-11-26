@@ -120,7 +120,7 @@ Anyone who can open Murmur can talk to your agents, and through them, to whateve
 -e MURMUR_PASSWORD='something long'
 ```
 
-With it set, Murmur shows a sign-in screen. Hermes, the live connection and Murmur's settings API all need a signed, HttpOnly, SameSite=Lax cookie, which lasts 30 days. Changing the password signs everyone out. Sign-in attempts are limited to 10 every 10 minutes per address. The web app's static files stay public: they hold no secrets and are needed to draw the sign-in screen. So does one Hermes address, `GET /hermes/api/mcp/oauth/callback/<app>`, where an app (Notion, Linear…) sends the browser back after someone signs in to it for an agent: that often happens in another browser, without Murmur's cookie. Hermes keeps it public too and accepts only the one-time state it issued, and Murmur passes on nothing but the address. Murmur's own `GET /murmur/sign-in/return` is public for the same reason: it's where a [single sign-on](#single-sign-on) to Hermes comes back, and it only finishes a sign-in Murmur started, named by its one-time state.
+With it set, Murmur shows a sign-in screen. Hermes, the live connection and Murmur's settings API all need an HttpOnly, SameSite=Lax session cookie. With a password alone, the signed cookie lasts 30 days. Changing the password signs everyone out. Sign-in attempts are limited to 10 every 10 minutes per address. The web app's static files stay public: they hold no secrets and are needed to draw the sign-in screen. So does one Hermes address, `GET /hermes/api/mcp/oauth/callback/<app>`, where an app (Notion, Linear…) sends the browser back after someone signs in to it for an agent: that often happens in another browser, without Murmur's cookie. Hermes keeps it public too and accepts only the one-time state it issued, and Murmur passes on nothing but the address. Murmur's own `GET /murmur/sign-in/return` is public for the same reason: it's where a [single sign-on](#single-sign-on) to Hermes comes back, and it only finishes a sign-in Murmur started, named by its one-time state.
 
 More protections are always on:
 
@@ -130,6 +130,22 @@ More protections are always on:
 - **No framing.** Murmur's pages can't be put inside another site's frame, so nobody can trick a click onto an approval.
 
 For access from outside your home network, put Murmur behind HTTPS (Caddy, Tailscale Serve, a Cloudflare tunnel) rather than exposing port 3000. Murmur marks its cookie `Secure` when the request arrived over HTTPS (`X-Forwarded-Proto: https`).
+
+### Two-factor authentication
+
+On umbrelOS, enable **Two-factor authentication** in your Umbrel account settings. The Umbrel sign-in page asks for the authenticator code after your password before opening Murmur. To see both prompts, open Murmur in a browser where you haven't signed in to Umbrel yet.
+
+For standalone Murmur, set `MURMUR_PASSWORD` and `MURMUR_TOTP_SECRET`. Generate a unique Base32 key on a trusted device:
+
+```sh
+python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'
+```
+
+1. In your authenticator app, add a time-based entry called **Murmur** and enter the generated key. Use six digits, a 30-second period and SHA-1 if the app asks.
+2. Put the same key in `MURMUR_TOTP_SECRET` and keep a backup in a secure place. For Docker Compose, set it in `.env` alongside `MURMUR_PASSWORD` and recreate the web container with `docker compose up -d --build murmur`. For a Node install, pass both variables to the server and restart it.
+3. Open Murmur over HTTPS. Enter your password, then a fresh code from your authenticator app. The password step expires after five minutes. Completed sessions expire after 12 hours or a server restart and are revoked when you sign out.
+
+If you lose your authenticator, use your backup key to add the entry to a new device, or generate a new key and update the server setting. The key is a credential. Keep it out of Git and protect the file or service that supplies it. Standalone two-factor authentication uses one key per Murmur instance.
 
 ### What's stored where
 
@@ -161,6 +177,7 @@ Keep the data volume private. If you'd rather not keep the Hermes password on di
 | `MURMUR_BUILTIN_HERMES_USERNAME`, `MURMUR_BUILTIN_HERMES_PASSWORD` | `murmur`, unset | The built-in's dashboard sign-in: the same values as its `HERMES_DASHBOARD_BASIC_AUTH_USERNAME` and `_PASSWORD`. |
 | `MURMUR_FIND_HERMES` | the Hermes Agent app on umbrelOS, and `localhost:9119`, `127.0.0.1:9119`, `localhost:18789` | Where to look for a Hermes you already have, as `Name=url` pairs or bare addresses, comma-separated. What answers is offered on first run, and in Settings → Server. A password-protected one is sent nothing until someone signs in. |
 | `MURMUR_PASSWORD` | unset | Requires this password to use Murmur. |
+| `MURMUR_TOTP_SECRET` | unset | Requires a time-based authenticator code after the password. Use an unpadded Base32 key of at least 20 bytes. |
 | `MURMUR_SECRET` | generated, saved in `DATA_DIR` | Key that signs Murmur's sign-in cookie. |
 | `MURMUR_ALLOWED_ORIGINS` | unset | Extra browser origins allowed to use Murmur, comma-separated (`https://murmur.example.com`). Their hosts are allowed too. `*` turns the origin check off. |
 | `MURMUR_ALLOWED_HOSTS` | unset | Extra host names Murmur answers to, comma-separated. A leading dot (`.example.com`) allows subdomains, and `*` turns the check off (only safe behind a proxy that signs people in, as on umbrelOS). |

@@ -26,6 +26,7 @@ services:
       MURMUR_FIND_HERMES: "http://host.docker.internal:9119"
       # Optional: a password for Murmur itself. Set one before opening it beyond this computer.
       MURMUR_PASSWORD: ${MURMUR_PASSWORD:-}
+      MURMUR_TOTP_SECRET: ${MURMUR_TOTP_SECRET:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

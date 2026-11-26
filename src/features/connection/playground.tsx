@@ -165,13 +165,14 @@ export function ConnectionPlayground() {
   if (view === 'login' || view === 'login-error') {
     return (
       <LoginScreen
+        step="password"
         error={loginError}
         onEdit={() => setLoginError(null)}
         onSubmit={async (pw) => {
           await wait(600)
-          if (pw === 'hunter2') return true
+          if (pw === 'hunter2') return 'signed-in'
           setLoginError('That password didn’t work.')
-          return false
+          return 'failed'
         }}
         onSignedIn={() => alert('Signed in')}
       />

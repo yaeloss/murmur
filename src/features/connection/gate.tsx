@@ -17,7 +17,7 @@ import { UpdateHermes } from './update-hermes'
 export function AccessGate({ children }: { children: ReactNode }) {
   const { session, error, signIn, clearError } = useMurmurSession()
   // Signed in from this screen: keep it up for its success beat, then hand over.
-  const [welcoming, setWelcoming] = useState(false)
+  const [welcoming, setWelcoming] = useState<'password' | 'code' | null>(null)
   useEffect(() => {
     if (!session) return
     // A first visit can load before the server has said which Hermes there are
@@ -27,16 +27,19 @@ export function AccessGate({ children }: { children: ReactNode }) {
   }, [session])
   if (!session) return <div className="min-h-dvh bg-bg" />
   if ((session.required && !session.signedIn) || welcoming) {
+    const step = welcoming ?? (session.awaitingCode ? 'code' : 'password')
     return (
       <LoginScreen
-        onSubmit={async (password) => {
-          const ok = await signIn(password)
-          if (ok) setWelcoming(true)
-          return ok
+        key={step}
+        step={step}
+        onSubmit={async (value) => {
+          const result = await signIn(value, step)
+          if (result === 'signed-in') setWelcoming(step)
+          return result
         }}
         error={error}
         onEdit={clearError}
-        onSignedIn={() => setWelcoming(false)}
+        onSignedIn={() => setWelcoming(null)}
       />
     )
   }

@@ -56,6 +56,7 @@ MURMUR_FIND_HERMES='Hermes Agent=http://localhost:18789' \
 | `MURMUR_BUILTIN_HERMES_USERNAME`, `MURMUR_BUILTIN_HERMES_PASSWORD` | `murmur`, unset | The built-in's dashboard sign-in (its `HERMES_DASHBOARD_BASIC_AUTH_*`) |
 | `MURMUR_FIND_HERMES` | the Hermes Agent app's container address, `localhost:9119`, `127.0.0.1:9119`, `localhost:18789` | Where to look for a Hermes people already have, as `Name=url,…` |
 | `MURMUR_PASSWORD` | unset | Puts Murmur behind its own password |
+| `MURMUR_TOTP_SECRET` | unset | Adds an authenticator step after `MURMUR_PASSWORD` |
 | `MURMUR_SECRET` | generated, kept in `DATA_DIR` | Signs Murmur's sign-in cookie |
 | `MURMUR_ALLOWED_HOSTS` | unset | Extra host names Murmur answers to, beyond IPs, `localhost`, `*.local`, `*.ts.net` and single-label names |
 | `MURMUR_ALLOWED_ORIGINS` | unset | Extra browser origins allowed to use Murmur (their hosts are allowed too) |

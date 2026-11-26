@@ -6,7 +6,7 @@ import type net from 'node:net'
 import { createReadStream, statSync } from 'node:fs'
 import { timingSafeEqual } from 'node:crypto'
 import { extname, join, normalize, resolve, sep } from 'node:path'
-import { cookieValue, handleAccess, isSignedIn, onSignOut } from './access.ts'
+import { authSessionExpiry, cookieValue, handleAccess, isSignedIn, onSignOut, totpConfig } from './access.ts'
 import { memo, setting, useEnv, type Env } from './config.ts'
 import { handleBrowserFrames } from './browser-frames.ts'
 import { handleAskAgain, startAskAgain, stopAskAgain } from './ask-again.ts'
@@ -209,6 +209,7 @@ export function startServer(options: ServerOptions = {}): Promise<RunningServer>
     env = { ...env, ...(options.dataDir && { DATA_DIR: options.dataDir }), ...(options.staticDir && { STATIC_DIR: options.staticDir }) }
   }
   useEnv(env)
+  totpConfig() // Fail before listening if the second factor was misconfigured.
   startSetup()
   // Telegram setups a restart interrupted carry on once the Hermes is settled.
   void setupSettled().then(startTelegram)
@@ -279,8 +280,22 @@ export function startServer(options: ServerOptions = {}): Promise<RunningServer>
     if (!isHermesApi(url.pathname)) return refuse(socket, 404, 'Not Found')
     if (!carriesHeader(req) || !hostAllowed(req) || !originAllowed(req)) return refuse(socket, 403, 'Forbidden')
     if (!isSignedIn(req)) return refuse(socket, 401, 'Unauthorized')
+    const session = cookieValue(req)
+    const expiry = session && authSessionExpiry(session)
+    if (session && expiry) {
+      const timer = setTimeout(() => socket.destroy(), Math.max(0, expiry - Date.now())).unref()
+      const unsubscribe = onSignOut((ended) => {
+        if (ended === session) socket.destroy()
+      })
+      socket.once('close', () => {
+        clearTimeout(timer)
+        unsubscribe()
+      })
+    }
     setupSettled()
-      .then(() => proxy.proxyUpgrade(req, socket, head, url, cookieValue(req)))
+      .then(() => {
+        if (!socket.destroyed) return proxy.proxyUpgrade(req, socket, head, url, session)
+      })
       .catch((error) => {
         console.error(error)
         socket.destroy()

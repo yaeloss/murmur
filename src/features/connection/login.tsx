@@ -4,41 +4,46 @@ import { Button } from '@/ui/button'
 import { ByUmbrel } from '@/ui/brand'
 import { usePrefersReducedMotion } from '@/lib/use-media'
 import { BrandHeader } from './brand-header'
-import { Note, PasswordField } from './fields'
-
-// Murmur's own sign-in, shown only when the server has MURMUR_PASSWORD set
-// (standalone installs). One field, one button. A wrong password shakes.
+import { Field, Note, PasswordField } from './fields'
 
 const HUE = 278
 
 type Props = {
-  /** Resolves true when signed in; false when the server said no (and `error` says why). */
-  onSubmit: (password: string) => Promise<boolean>
+  step: 'password' | 'code'
+  onSubmit: (value: string) => Promise<'signed-in' | 'next' | 'failed'>
   error?: string | null
   onEdit?: () => void
   /** Called once the success beat has played. */
   onSignedIn?: () => void
 }
 
-export function LoginScreen({ onSubmit, error, onEdit, onSignedIn }: Props) {
-  const [password, setPassword] = useState('')
+export function LoginScreen({ step, onSubmit, error, onEdit, onSignedIn }: Props) {
+  const [value, setValue] = useState('')
+  const code = step === 'code'
+  const ready = code ? /^\d{6}$/.test(value) : !!value
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done'>('idle')
   const [scope, animate] = useAnimate()
   const reduced = usePrefersReducedMotion()
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!password || phase !== 'idle') return
+    if (!ready || phase !== 'idle') return
     setPhase('busy')
-    const ok = await onSubmit(password)
-    if (ok) {
+    const result = await onSubmit(value)
+    if (result === 'signed-in') {
       setPhase('done')
       setTimeout(() => onSignedIn?.(), 650)
       return
     }
+    if (result === 'next') return
     setPhase('idle')
     if (!reduced) void animate(scope.current, { x: [0, -9, 8, -5, 3, 0] }, { duration: 0.42, ease: 'easeOut' })
     ;(scope.current as HTMLElement | null)?.querySelector('input')?.select()
+  }
+
+  const edit = (next: string) => {
+    setValue(next)
+    if (error) onEdit?.()
   }
 
   return (
@@ -51,7 +56,11 @@ export function LoginScreen({ onSubmit, error, onEdit, onSignedIn }: Props) {
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         >
           {/* Signed in: the two of them hop for joy before the app takes over. */}
-          <BrandHeader hop={phase === 'done'} title="Sign in" body="Enter your password to continue." />
+          <BrandHeader
+            hop={phase === 'done'}
+            title={code ? 'Two-factor authentication' : 'Sign in'}
+            body={code ? 'Enter the six-digit code from your authenticator app.' : 'Enter your password to continue.'}
+          />
         </motion.div>
 
         <motion.div
@@ -61,21 +70,31 @@ export function LoginScreen({ onSubmit, error, onEdit, onSignedIn }: Props) {
           className="mt-9"
         >
           <div ref={scope}>
-            <PasswordField
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value)
-                if (error) onEdit?.()
-              }}
-              placeholder="Password"
-              aria-label="Password"
-              autoComplete="current-password"
-              autoFocus
-              invalid={!!error}
-            />
+            {code ? (
+              <Field
+                value={value}
+                onChange={(e) => edit(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Authenticator code"
+                aria-label="Authenticator code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                invalid={!!error}
+              />
+            ) : (
+              <PasswordField
+                value={value}
+                onChange={(e) => edit(e.target.value)}
+                placeholder="Password"
+                aria-label="Password"
+                autoComplete="current-password"
+                autoFocus
+                invalid={!!error}
+              />
+            )}
           </div>
           <Note tone="danger">{error}</Note>
-          <Button type="submit" size="lg" variant="accent" className="mt-4" loading={phase === 'busy'} disabled={!password && phase === 'idle'}>
+          <Button type="submit" size="lg" variant="accent" className="mt-4" loading={phase === 'busy'} disabled={!ready || phase === 'done'}>
             Continue
           </Button>
         </motion.div>

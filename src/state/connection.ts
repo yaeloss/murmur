@@ -362,7 +362,27 @@ export function needsConnectionSetup(c: HermesConnection | undefined) {
 // Plain state, not react-query: the gate sits outside the app's QueryClient
 // so nothing in the app (its socket included) starts before sign-in.
 
-export type MurmurSession = { required: boolean; signedIn: boolean }
+export type MurmurSession = { required: boolean; signedIn: boolean; twoFactor?: boolean; awaitingCode?: boolean }
+
+const TWO_FACTOR_KEY = 'murmur:two-factor'
+const offlineSession: MurmurSession = { required: false, signedIn: true }
+
+function knownTwoFactor() {
+  try {
+    return localStorage.getItem(TWO_FACTOR_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function rememberTwoFactor(enabled: boolean) {
+  try {
+    if (enabled) localStorage.setItem(TWO_FACTOR_KEY, 'true')
+    else localStorage.removeItem(TWO_FACTOR_KEY)
+  } catch {
+    // Storage can be unavailable in the browser.
+  }
+}
 
 /**
  * Forget what this browser kept to open quickly and to show when nothing can
@@ -381,18 +401,26 @@ export function useMurmurSession() {
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
-    // The page itself came from this device because the server didn't answer: no waiting on it again.
-    if (openedKept) setSession((s) => s ?? { required: false, signedIn: true })
+    const mustVerify = knownTwoFactor()
+    if (openedKept && !mustVerify) setSession((s) => s ?? offlineSession)
     try {
-      // A server that's out of reach can leave a request hanging for a minute; this is asked before anything is drawn.
       const res = await fetch('/murmur/session', { cache: 'no-store', signal: AbortSignal.timeout(4000) })
-      const session = res.ok ? ((await res.json()) as MurmurSession) : { required: false, signedIn: true }
+      if (res.status === 404 && !mustVerify) {
+        setSession(offlineSession)
+        return
+      }
+      if (!res.ok) throw new Error('Session unavailable')
+      const session = (await res.json()) as MurmurSession
+      rememberTwoFactor(!!session.twoFactor)
       // Signed out (here or by the cookie running out): what this device kept of the chats goes too.
       if (session.required && !session.signedIn) await forgetAll()
       setSession(session)
     } catch {
-      // Murmur's server is unreachable; let the app show its own offline state.
-      setSession({ required: false, signedIn: true })
+      // A new visit to a known 2FA install needs the server to verify the session.
+      if (mustVerify) {
+        setSession({ required: true, signedIn: false, twoFactor: true })
+        setError('Can’t verify your session. Reconnect to Murmur to sign in.')
+      } else setSession(offlineSession)
     }
   }, [])
 
@@ -403,26 +431,36 @@ export function useMurmurSession() {
     return () => window.removeEventListener(SESSION_CHECK, refresh)
   }, [refresh])
 
-  const signIn = useCallback(async (password: string) => {
+  const signIn = useCallback(async (value: string, step: 'password' | 'code') => {
     setError(null)
+    const code = step === 'code'
     let res: Response
     try {
-      res = await fetch('/murmur/login', {
+      res = await fetch(code ? '/murmur/login/totp' : '/murmur/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(code ? { code: value } : { password: value }),
       })
     } catch {
       setError('Can’t reach Murmur. Check your connection, then try again.')
-      return false
+      return 'failed'
     }
-    if (res.ok) {
-      setSession({ required: true, signedIn: true })
-      return true
+    const data = (await res.json().catch(() => null)) as { ok?: boolean; awaitingCode?: boolean; restart?: boolean; error?: string } | null
+    if (res.ok && data?.awaitingCode) {
+      rememberTwoFactor(true)
+      setSession({ required: true, signedIn: false, twoFactor: true, awaitingCode: true })
+      return 'next'
     }
-    const data = (await res.json().catch(() => null)) as { error?: string } | null
+    if (res.ok && data?.ok) {
+      setSession({ required: true, signedIn: true, twoFactor: code })
+      return 'signed-in'
+    }
     setError(data?.error ?? 'Something went wrong. Try again.')
-    return false
+    if (data?.restart) {
+      setSession({ required: true, signedIn: false, twoFactor: true })
+      return 'next'
+    }
+    return 'failed'
   }, [])
 
   const signOut = useCallback(async () => {

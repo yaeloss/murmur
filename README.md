@@ -206,7 +206,7 @@ Murmur comes with **Hermes 0.23.4**, and works with any **Hermes Agent 0.21.4 or
 ## Privacy and security
 
 - Everything runs on hardware you control. Murmur talks only to your Hermes.
-- On umbrelOS, Murmur sits behind your Umbrel login. On its own, you can give it a password (`MURMUR_PASSWORD`).
+- On umbrelOS, Murmur sits behind your Umbrel login, including its two-factor authentication when enabled. On its own, Murmur supports a [password and authenticator code](docs/STANDALONE.md#two-factor-authentication).
 - Hermes's access key stays on Murmur's server, and Murmur refuses requests from other websites.
 - An exported agent leaves its keys and sign-ins behind.
 
